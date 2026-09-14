@@ -1,11 +1,12 @@
 {
   "name": "brothers-panel-firebase-bot",
-  "version": "3.0.0",
+  "version": "2.1.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "express": "^5.1.0",
     "telegraf": "^4.16.3"
   }
