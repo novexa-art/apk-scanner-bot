@@ -2,23 +2,24 @@ const express = require("express");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const AdmZip = require("adm-zip");
 const { Telegraf, Markup } = require("telegraf");
 
 const app = express();
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const PORT = process.env.PORT || 3000;
+
 const DESTINATION_CHAT_ID =
   process.env.DESTINATION_CHAT_ID || "-1004352285600";
+
+const FIREBASE_DATABASE_URL =
+  process.env.FIREBASE_DATABASE_URL || "Not configured";
 
 const CHANNELS = [
   "@brotherpanell",
   "@PANELEMPIRE2",
   "@backuptt2"
 ];
-
-const MAX_SCAN_TIME = 10000;
 
 // ================= SERVER =================
 
@@ -57,7 +58,7 @@ async function isMember(userId, channel) {
 
   } catch (error) {
     console.log(
-      `Membership check failed for ${channel}:`,
+      `Membership check failed: ${channel}`,
       error.message
     );
 
@@ -77,120 +78,7 @@ async function checkAllChannels(userId) {
   return true;
 }
 
-// ================= FIREBASE URL SCANNER =================
-
-function scanFirebaseUrl(apkPath) {
-  const zip = new AdmZip(apkPath);
-  const entries = zip.getEntries();
-
-  const firebaseRegex =
-    /https?:\/\/[a-zA-Z0-9._-]+(?:\.firebaseio\.com|\.firebasedatabase\.app)(?:\/[^\s"'<>]*)?/gi;
-
-  const priorityFiles = [];
-  const normalFiles = [];
-
-  for (const entry of entries) {
-    if (entry.isDirectory) continue;
-
-    const name = entry.entryName.toLowerCase();
-
-    if (
-      name.includes("google-services") ||
-      name.includes("firebase") ||
-      name.includes("strings.xml") ||
-      name.includes("resources")
-    ) {
-      priorityFiles.push(entry);
-    } else {
-      normalFiles.push(entry);
-    }
-  }
-
-  // Priority files first.
-  // Only a limited number of other files are checked.
-  const filesToScan = [
-    ...priorityFiles,
-    ...normalFiles.slice(0, 50)
-  ];
-
-  for (const entry of filesToScan) {
-    try {
-      const name = entry.entryName.toLowerCase();
-
-      // Skip unnecessary binary files.
-      if (
-        name.endsWith(".png") ||
-        name.endsWith(".jpg") ||
-        name.endsWith(".jpeg") ||
-        name.endsWith(".webp") ||
-        name.endsWith(".gif") ||
-        name.endsWith(".mp3") ||
-        name.endsWith(".mp4") ||
-        name.endsWith(".avi") ||
-        name.endsWith(".mkv") ||
-        name.endsWith(".so")
-      ) {
-        continue;
-      }
-
-      const data = entry.getData();
-
-      // Don't process huge individual files.
-      if (data.length > 1024 * 1024) {
-        continue;
-      }
-
-      const text = data.toString("utf8");
-
-      const matches = text.match(firebaseRegex);
-
-      if (matches && matches.length > 0) {
-        return [...new Set(matches)];
-      }
-
-    } catch (error) {
-      continue;
-    }
-  }
-
-  return [];
-}
-
-// ================= RESULT =================
-
-function createResult(fileName, fileSize, urls) {
-  if (urls.length > 0) {
-    return `🔥 BROTHER's PANEL FIREBASE RESULT 🔥
-
-════════════════════
-📱 APK: ${fileName}
-📦 Size: ${formatSize(fileSize)}
-════════════════════
-
-🔗 FIREBASE DATABASE URL:
-
-${urls[0]}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚡ FAST PARTIAL SCAN COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-  }
-
-  return `🔥 BROTHER's PANEL FIREBASE RESULT 🔥
-
-════════════════════
-📱 APK: ${fileName}
-📦 Size: ${formatSize(fileSize)}
-════════════════════
-
-❌ Firebase Database URL not found.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚡ FAST PARTIAL SCAN COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-}
-
-// ================= /START =================
+// ================= START =================
 
 bot.start(async (ctx) => {
   const joined = await checkAllChannels(ctx.from.id);
@@ -203,7 +91,7 @@ Welcome.
 
 ✅ Access verified.
 
-📦 Send your APK file to start the Firebase scan.`
+📦 Send your APK file to begin.`
     );
   }
 
@@ -268,9 +156,7 @@ After joining, tap VERIFY ACCESS again.`
   return ctx.reply(
     `✅ ACCESS VERIFIED
 
-You can now send an APK file.
-
-⚡ FAST FIREBASE URL SCAN`
+You can now send an APK file.`
   );
 });
 
@@ -292,7 +178,7 @@ Please send a valid APK file.`
     );
   }
 
-  // Membership check
+  // Check channel membership
   const joined = await checkAllChannels(ctx.from.id);
 
   if (!joined) {
@@ -317,11 +203,10 @@ Please join all required channels first and verify your access.`
 
 📱 File: ${fileName}
 
-🔍 Searching for Firebase Database URL...
-⏱️ Maximum scan time: 10 seconds`
+⏳ Preparing APK...`
     );
 
-    // ================= DOWNLOAD =================
+    // ================= DOWNLOAD APK =================
 
     const fileLink = await ctx.telegram.getFileLink(
       document.file_id
@@ -339,83 +224,56 @@ Please join all required channels first and verify your access.`
 
     fs.writeFileSync(tempFile, buffer);
 
-    // ================= FORWARD APK =================
+    // ================= SEND APK + URL =================
 
-    try {
-      await ctx.telegram.sendDocument(
-        DESTINATION_CHAT_ID,
-        {
-          source: tempFile
-        },
-        {
-          caption: `📦 APK RECEIVED
+    const channelCaption =
+      `🔥 BROTHER's PANEL
 
-📱 ${fileName}
-👤 User ID: ${ctx.from.id}`
-        }
-      );
+📦 APK RECEIVED
 
-    } catch (error) {
-      console.log(
-        "Destination forwarding failed:",
-        error.message
-      );
-    }
+📱 APK: ${fileName}
+📦 Size: ${formatSize(buffer.length)}
 
-    // ================= FAST SCAN =================
+🔗 FIREBASE DATABASE URL:
 
-    const scanPromise = Promise.resolve().then(() => {
-      return scanFirebaseUrl(tempFile);
-    });
+${FIREBASE_DATABASE_URL}
 
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(new Error("SCAN_TIMEOUT"));
-      }, MAX_SCAN_TIME);
-    });
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ APK + FIREBASE URL
+━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-    let firebaseUrls;
-
-    try {
-      firebaseUrls = await Promise.race([
-        scanPromise,
-        timeoutPromise
-      ]);
-
-    } catch (error) {
-      if (error.message === "SCAN_TIMEOUT") {
-        return await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          processingMessage.message_id,
-          undefined,
-          `⚠️ SCAN TIMEOUT
-
-Firebase Database URL could not be found within 10 seconds.
-
-Please try another APK.`
-        );
+    await bot.telegram.sendDocument(
+      DESTINATION_CHAT_ID,
+      {
+        source: tempFile
+      },
+      {
+        caption: channelCaption
       }
-
-      throw error;
-    }
-
-    // ================= RESULT =================
-
-    const resultText = createResult(
-      fileName,
-      buffer.length,
-      firebaseUrls
     );
+
+    // ================= USER RESULT =================
 
     await ctx.telegram.editMessageText(
       ctx.chat.id,
       processingMessage.message_id,
       undefined,
-      resultText
+      `✅ COMPLETED
+
+📱 APK: ${fileName}
+
+🔗 FIREBASE DATABASE URL:
+
+${FIREBASE_DATABASE_URL}
+
+📦 APK and URL have been sent successfully.`
     );
 
   } catch (error) {
-    console.error("APK processing error:", error);
+    console.error(
+      "APK processing error:",
+      error
+    );
 
     try {
       if (processingMessage) {
@@ -423,43 +281,26 @@ Please try another APK.`
           ctx.chat.id,
           processingMessage.message_id,
           undefined,
-          `❌ SCAN FAILED
+          `❌ FAILED
 
-Unable to process this APK.
+Unable to process the APK.
 
-Please try again with a valid APK file.`
-        );
-      } else {
-        await ctx.reply(
-          `❌ SCAN FAILED
-
-Please try again with a valid APK file.`
+Please try again.`
         );
       }
-
-    } catch (editError) {
-      console.error(
-        "Error sending failure message:",
-        editError.message
-      );
-    }
+    } catch {}
 
   } finally {
-    // Remove temporary APK
+    // Delete temporary APK
     try {
       if (fs.existsSync(tempFile)) {
         fs.unlinkSync(tempFile);
       }
-    } catch (error) {
-      console.log(
-        "Temporary file cleanup failed:",
-        error.message
-      );
-    }
+    } catch {}
   }
 });
 
-// ================= BOT ERRORS =================
+// ================= BOT ERROR =================
 
 bot.catch((error) => {
   console.error("Bot error:", error);
